@@ -1,0 +1,50 @@
+{
+    "manifest_version": 3,
+    "name": "Real-Time Translation for Call Centers",
+    "version": "1.0",
+    "description": "Provides real-time translation during calls in web-based call centers.",
+    "default_locale": "en",
+    "permissions": [
+      "activeTab",
+      "storage",
+      "webAudioPermission",
+      "tabCapture",
+      "scripting"
+    ],
+    "host_permissions": [
+      "https://translation.googleapis.com/",
+      "https://speech.googleapis.com/",
+      "https://texttospeech.googleapis.com/"
+    ],
+    "background": {
+      "service_worker": "src/background/background.js"
+    },
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["src/content/content.js"]
+      }
+    ],
+    "action": {
+      "default_popup": "src/popup/popup.html",
+      "default_icon": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+      }
+    },
+    "icons": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "content_security_policy": {
+      "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://translation.googleapis.com https://speech.googleapis.com https://texttospeech.googleapis.com;"
+    },
+    "web_accessible_resources": [
+      {
+        "resources": ["config.js"],
+        "matches": ["<all_urls>"]
+      }
+    ]
+  }

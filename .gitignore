@@ -150,3 +150,6 @@ out
 
 # Lock file
 package-lock.json
+
+#web_accessible_resources
+config.js
