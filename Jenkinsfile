@@ -8,7 +8,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'develop', url: 'https://github.com/SalvationIbeh/Live-Translation-Extension', credentialsId: 'Personal Access Key for Translation Extension'
+                git branch: 'develop', url: 'https://github.com/SalvationIbeh/Live-Translation-Extension', credentialsId: 'Git-Translation-Extension'
             }
         }
 
