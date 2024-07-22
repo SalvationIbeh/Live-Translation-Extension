@@ -1,0 +1,38 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: cimg/node:14
+    environment:
+      NODE_ENV: development
+    steps:
+      - checkout:
+          path: ~/repo
+          branch: develop
+      - run:
+          name: Install dependencies
+          command: npm install
+      - run:
+          name: Run unit tests
+          command: npm test
+      - run:
+          name: Push to integration
+          command: |
+            git config user.name "UnitTestPipeline-jenkins"
+            git config user.email "salvationibeh@gmail"
+            git checkout -b integration
+            git merge develop
+            git push origin integration
+      - run:
+          name: Clean workspace
+          command: rm -rf ~/repo/*
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build:
+          filters:
+            branches:
+              only: develop
