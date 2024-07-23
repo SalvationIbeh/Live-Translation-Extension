@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/node:14
+      - image: cimg/base:current
     environment:
       NODE_ENV: development
     steps:
