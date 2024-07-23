@@ -7,9 +7,10 @@ jobs:
     environment:
       NODE_ENV: development
     steps:
-      - checkout:
-          path: ~/repo
-          branch: develop
+      - checkout
+      - run:
+          name: List files to verify checkout
+          command: ls -al
       - run:
           name: Install dependencies
           command: npm install
@@ -19,7 +20,7 @@ jobs:
       - run:
           name: Push to integration
           command: |
-            git config user.name "UnitTestPipeline-jenkins"
+            git config user.name "UnitTestPipeline-circleci"
             git config user.email "salvationibeh@gmail"
             git checkout -b integration
             git merge develop
