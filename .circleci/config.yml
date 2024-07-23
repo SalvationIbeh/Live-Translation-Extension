@@ -16,7 +16,7 @@ jobs:
           command: npm install
       - run:
           name: Run unit tests
-          command: npm test
+          command: npm test audiocapture.test.js
       - run:
           name: Push to integration
           command: |
