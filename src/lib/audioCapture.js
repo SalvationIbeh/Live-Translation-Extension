@@ -47,8 +47,66 @@ class AudioCapture {
     }
   
     async setupAudioContext() {
-      this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      this.audioContext = new AudioContextClass({
         sampleRate: this.options.sampleRate,
       });
     }
+
+    async captureMicAudio() {
+      this.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: this.options.enableEchoCancellation,
+          noiseSuppression: this.options.enableNoiseReduction,
+          sampleRate: this.options.sampleRate,
+        },
+      });
+      this.micSource = this.audioContext.createMediaStreamSource(this.micStream);
+    }
+
+    async captureTabAudio() {
+      this.tabStream = await navigator.mediaDevices.getDisplayMedia({
+        audio: true,
+        video: false,
+      });
+      this.tabSource = this.audioContext.createMediaStreamSource(this.tabStream);
+    }
+  
+    setupAudioProcessing() {
+      this.processor = this.audioContext.createScriptProcessor(4096, 2, 2);
+      this.analyser = this.audioContext.createAnalyser();
+  
+      this.micSource.connect(this.processor);
+      this.tabSource.connect(this.processor);
+      this.processor.connect(this.analyser);
+      this.analyser.connect(this.audioContext.destination);
+  
+      this.processor.onaudioprocess = (e) => {
+        if (this.isCapturing && !this.isPaused) {
+          const left = e.inputBuffer.getChannelData(0);
+          const right = e.inputBuffer.getChannelData(1);
+          this.capturedChunks.push({ left, right });
+          this.updateAudioLevel();
+        }
+      };
+    }
+  
+    startVisualization() {
+      const updateVisualization = () => {
+        if (this.isCapturing) {
+          this.updateAudioLevel();
+          requestAnimationFrame(updateVisualization);
+        }
+      };
+      updateVisualization();
+    }
+
+    handleError(error) {
+      console.error('Audio Capture Error:', error);
+      if (this.onErrorCallback) {
+        this.onErrorCallback(error);
+      }
+    }
 }
+
+export default AudioCapture;
