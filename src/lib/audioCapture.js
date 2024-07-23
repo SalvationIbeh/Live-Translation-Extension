@@ -37,4 +37,18 @@ class AudioCapture {
         this.handleError(error);
       }
     }
+    async requestPermissions() {
+      try {
+        await navigator.permissions.query({ name: 'microphone' });
+        await navigator.permissions.query({ name: 'display-capture' });
+      } catch (error) {
+        throw new Error('Permission denied: ' + error.message);
+      }
+    }
+  
+    async setupAudioContext() {
+      this.audioContext = new (window.AudioContext || window.webkitAudioContext)({
+        sampleRate: this.options.sampleRate,
+      });
+    }
 }
