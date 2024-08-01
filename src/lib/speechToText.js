@@ -22,7 +22,7 @@ class SpeechToText {
 
     this.setupRecognitionCallbacks();
   }
-
+  
   setupRecognitionCallbacks() {
     this.recognition.onstart = () => this.handleStateChange('listening');
     this.recognition.onend = () => this.handleStateChange('stopped');
@@ -77,17 +77,48 @@ class SpeechToText {
     }
   }
 
-  formatTranscript(text) {
-    // Basic punctuation and capitalization
-    let formatted = text.trim();
-    formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1);
-    
-    // Add period if missing at the end
-    if (!['!', '?', '.'].includes(formatted.slice(-1))) {
-      formatted += '.';
+  formatTranscript(transcript) {
+    if (!transcript) return '';
+  
+    // Check if the entire input is in uppercase
+    const isAllCaps = transcript === transcript.toUpperCase();
+  
+    // Split the transcript into sentences
+    const sentences = transcript.split(/([.!?]+)/).filter(Boolean);
+  
+    // Process each sentence
+    const formattedSentences = sentences.map((sentence, index) => {
+      // Trim whitespace
+      sentence = sentence.trim();
+  
+      if (index % 2 === 0) { // Even indexes are sentence content
+        if (!isAllCaps) {
+          // Capitalize the first letter of each sentence if not all caps
+          sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1).toLowerCase();
+        } else {
+          // Keep all caps if the input was all caps
+          sentence = sentence.toUpperCase();
+        }
+      }
+  
+      return sentence;
+    });
+  
+    // Join the sentences, ensuring space after punctuation but not before
+    let result = formattedSentences.reduce((acc, current, index) => {
+      if (index % 2 === 0 && index > 0) {
+        // Add space after punctuation
+        return acc + ' ' + current;
+      }
+      return acc + current;
+    }, '');
+  
+    // Add a period at the end if there's no terminal punctuation
+    if (!/[.!?]$/.test(result)) {
+      result += '.';
     }
-
-    return formatted;
+  
+    return result;
   }
 
   handleError(error) {
