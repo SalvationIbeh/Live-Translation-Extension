@@ -1,4 +1,4 @@
-import SpeechToText from '../../src/lib/speechToText';
+import SpeechToText from '../../../../src/lib/speechToText';
 
 // Mock the global SpeechRecognition object
 global.SpeechRecognition = jest.fn().mockImplementation(() => ({

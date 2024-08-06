@@ -1,7 +1,7 @@
 // src/tests/audioCapture.test.js
 
-import AudioCapture from '../../src/lib/audioCapture';
-import mockMediaDevices from '../../mocks/navigator.mediaDevices';
+import AudioCapture from '../../../../src/lib/audioCapture';
+import mockMediaDevices from '../../../../mocks/navigator.mediaDevices';
 
 // Mock the global objects and methods
 global.navigator = {
