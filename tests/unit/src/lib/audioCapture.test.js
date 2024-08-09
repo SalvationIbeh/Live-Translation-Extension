@@ -1,4 +1,4 @@
-// src/tests/audioCapture.test.js
+// tests/unit/src/lib/audioCapture.test.js
 
 import AudioCapture from '../../../../src/lib/audioCapture';
 import mockMediaDevices from '../../../../mocks/navigator.mediaDevices';

@@ -16,7 +16,7 @@ jobs:
           command: npm install
       - run:
           name: Run unit tests
-          command: npm test audiocapture.test.js && npm test speechtotext.test.js
+          command: npm test audiocapture.test.js && npm test speechtotext.test.js && npm test translation.test.js && npm test translationpipeline.test.js && npm test cacheService.test.js
       - run:
           name: Push to integration
           command: |
