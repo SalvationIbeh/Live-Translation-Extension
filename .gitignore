@@ -152,4 +152,4 @@ out
 package-lock.json
 
 #web_accessible_resources
-config.js
+#config.js
