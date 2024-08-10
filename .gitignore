@@ -149,7 +149,7 @@ out
 .eslintcache
 
 # Lock file
-package-lock.json
+#package-lock.json
 
 #web_accessible_resources
 #config.js
