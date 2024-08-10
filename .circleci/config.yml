@@ -1,38 +1,66 @@
 version: 2.1
 
 jobs:
-  build:
+  build_and_test:
     docker:
       - image: cimg/node:22.5.1
     environment:
-      NODE_ENV: development
+      NODE_ENV: test
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-packages-{{ checksum "package-lock.json" }}
+      - run:
+          name: Install dependencies
+          command: npm ci
+      - save_cache:
+          paths:
+            - ~/.npm
+          key: npm-packages-{{ checksum "package-lock.json" }}
+      - run:
+          name: Print environment info
+          command: |
+            node --version
+            npm --version
+            echo $NODE_ENV
+      - run:
+          name: Run unit tests for src/lib
+          command: npm test -- "tests/unit/src/lib/**/*.test.js"
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: test-results
+          destination: test-results
+
+  push_to_integration:
+    docker:
+      - image: cimg/node:22.5.1
     steps:
       - checkout
       - run:
-          name: List files to verify checkout
-          command: ls -al
-      - run:
-          name: Install dependencies
-          command: npm install
-      - run:
-          name: Run unit tests
-          command: npm test audiocapture.test.js && npm test speechtotext.test.js && npm test translation.test.js && npm test translationpipeline.test.js && npm test cacheService.test.js
-      - run:
-          name: Push to integration
+          name: Configure git
           command: |
             git config user.name "UnitTestPipeline-circleci"
             git config user.email "salvationibeh@gmail"
+      - run:
+          name: Push to integration
+          command: |
             git checkout -b integration
             git merge develop
             git push origin integration
-      - run:
-          name: Clean workspace
-          command: rm -rf ~/repo/*
 
 workflows:
-  build_and_test:
+  version: 2
+  build_test_and_push:
     jobs:
-      - build:
+      - build_and_test:
+          filters:
+            branches:
+              only: develop
+      - push_to_integration:
+          requires:
+            - build_and_test
           filters:
             branches:
               only: develop
