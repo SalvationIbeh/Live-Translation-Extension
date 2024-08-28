@@ -3,21 +3,25 @@
 import AudioCapture from './audioCapture';
 import SpeechToText from './speechToText';
 import Translation from './translation';
+import TextToSpeech from './textToSpeech';
 
 class TranslationPipeline {
   constructor(options = {}) {
     this.audioCapture = new AudioCapture(options.audioCapture);
     this.speechToText = new SpeechToText(options.speechToText);
     this.translation = new Translation(options.translation);
+    this.textToSpeech = new TextToSpeech(options.textToSpeech);
 
     this.isRunning = false;
     this.onTranslatedTextCallback = null;
+    this.onSpokenTranslationCallback = null;
   }
 
-  start() {
+  async start() {
     if (this.isRunning) return;
 
     this.isRunning = true;
+    await this.textToSpeech.init();
     this.audioCapture.start();
 
     this.audioCapture.setAudioLevelCallback((level) => {
@@ -30,6 +34,7 @@ class TranslationPipeline {
         if (this.onTranslatedTextCallback) {
           this.onTranslatedTextCallback(translatedText);
         }
+        await this.speakTranslation(translatedText);
       }
     });
 
@@ -48,12 +53,37 @@ class TranslationPipeline {
     this.onTranslatedTextCallback = callback;
   }
 
+  setOnSpokenTranslationCallback(callback) {
+    this.onSpokenTranslationCallback = callback;
+  }
+
   setSourceLanguage(lang) {
     this.translation.setSourceLanguage(lang);
+    this.speechToText.setLanguage(lang);
   }
 
   setTargetLanguage(lang) {
     this.translation.setTargetLanguage(lang);
+    this.textToSpeech.setVoice(lang);
+  }
+
+  async speakTranslation(text) {
+    await this.textToSpeech.speak(text, this.translation.getTargetLanguage());
+    if (this.onSpokenTranslationCallback) {
+      this.onSpokenTranslationCallback(text);
+    }
+  }
+
+  setTTSRate(rate) {
+    this.textToSpeech.setRate(rate);
+  }
+
+  setTTSPitch(pitch) {
+    this.textToSpeech.setPitch(pitch);
+  }
+
+  setTTSVolume(volume) {
+    this.textToSpeech.setVolume(volume);
   }
 }
 

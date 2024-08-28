@@ -6,16 +6,39 @@ import TranslationPipeline from '../../../../src/lib/translationPipeline';
 import AudioCapture from '../../../../src/lib/audioCapture';
 import SpeechToText from '../../../../src/lib/speechToText';
 import Translation from '../../../../src/lib/translation';
+import TextToSpeech from '../../../../src/lib/textToSpeech';
 
 jest.mock('../../../../src/lib/audioCapture');
-jest.mock('../../../../src/lib/speechToText');
-jest.mock('../../../../src/lib/translation');
+jest.mock('../../../../src/lib/translation', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    translate: jest.fn(),
+    setSourceLanguage: jest.fn(),
+    setTargetLanguage: jest.fn(),
+  }))
+}));
+jest.mock('../../../../src/lib/speechToText', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    start: jest.fn(),
+    stop: jest.fn(),
+  }))
+}));
+jest.mock('../../../../src/lib/textToSpeech', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    init: jest.fn().mockResolvedValue(undefined),
+    setVoice: jest.fn(),
+    speak: jest.fn().mockResolvedValue(undefined),
+  }))
+}));
 
 describe('TranslationPipeline', () => {
   let translationPipeline;
   let mockAudioCapture;
   let mockSpeechToText;
   let mockTranslation;
+  let mockTextToSpeech;
 
   beforeEach(() => {
     mockAudioCapture = {
@@ -28,23 +51,28 @@ describe('TranslationPipeline', () => {
       start: jest.fn(),
       stop: jest.fn(),
       setOnResultCallback: jest.fn(),
+      setLanguage: jest.fn(), 
     };
 
     mockTranslation = {
       translate: jest.fn(),
       setSourceLanguage: jest.fn(),
       setTargetLanguage: jest.fn(),
+      getTargetLanguage: jest.fn(),
+    };
+
+    mockTextToSpeech = {
+      init: jest.fn().mockResolvedValue(undefined),
+      setVoice: jest.fn(),
+      speak: jest.fn().mockResolvedValue(undefined),
     };
 
     AudioCapture.mockImplementation(() => mockAudioCapture);
     SpeechToText.mockImplementation(() => mockSpeechToText);
     Translation.mockImplementation(() => mockTranslation);
+    TextToSpeech.mockImplementation(() => mockTextToSpeech);
 
     translationPipeline = new TranslationPipeline();
-  });
-
-  afterEach(() => {
-    jest.clearAllMocks();
   });
 
   test('constructor initializes with default options', () => {
@@ -52,19 +80,20 @@ describe('TranslationPipeline', () => {
     expect(translationPipeline.onTranslatedTextCallback).toBeNull();
   });
 
-  test('start method initializes components and sets callbacks', () => {
-    translationPipeline.start();
-
+  test('start method initializes components and sets callbacks', async () => {
+    await translationPipeline.start();
+  
     expect(translationPipeline.isRunning).toBe(true);
+    expect(mockTextToSpeech.init).toHaveBeenCalled();
     expect(mockAudioCapture.start).toHaveBeenCalled();
     expect(mockAudioCapture.setAudioLevelCallback).toHaveBeenCalled();
     expect(mockSpeechToText.setOnResultCallback).toHaveBeenCalled();
     expect(mockSpeechToText.start).toHaveBeenCalled();
   });
 
-  test('start method does not reinitialize if already running', () => {
+  test('start method does not reinitialize if already running', async () => {
     translationPipeline.isRunning = true;
-    translationPipeline.start();
+    await translationPipeline.start();
 
     expect(mockAudioCapture.start).not.toHaveBeenCalled();
     expect(mockSpeechToText.start).not.toHaveBeenCalled();
@@ -113,7 +142,7 @@ describe('TranslationPipeline', () => {
     const mockOnTranslatedTextCallback = jest.fn();
     translationPipeline.setOnTranslatedTextCallback(mockOnTranslatedTextCallback);
 
-    translationPipeline.start();
+    await translationPipeline.start();
 
     // Simulate speech-to-text result
     const speechToTextCallback = mockSpeechToText.setOnResultCallback.mock.calls[0][0];
@@ -124,7 +153,7 @@ describe('TranslationPipeline', () => {
   });
 
   test('speech-to-text callback does not trigger translation for non-final results', async () => {
-    translationPipeline.start();
+    await translationPipeline.start();
 
     // Simulate non-final speech-to-text result
     const speechToTextCallback = mockSpeechToText.setOnResultCallback.mock.calls[0][0];
@@ -133,8 +162,8 @@ describe('TranslationPipeline', () => {
     expect(mockTranslation.translate).not.toHaveBeenCalled();
   });
 
-  test('audio level callback is set correctly', () => {
-    translationPipeline.start();
+  test('audio level callback is set correctly', async () => {
+    await translationPipeline.start();
 
     const audioLevelCallback = mockAudioCapture.setAudioLevelCallback.mock.calls[0][0];
     audioLevelCallback(0.5);

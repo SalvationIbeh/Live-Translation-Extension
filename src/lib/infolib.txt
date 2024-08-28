@@ -1,0 +1,67 @@
+# ../src/lib/
+
+# Live Translation Extension Library Summary
+
+## Overview
+This library contains modules for a live translation extension, combining audio capture, speech recognition, translation, and caching services.
+
+## File Summaries
+
+### audioCapture.js
+- Purpose: Handles audio capture from both microphone and browser tab.
+- Key features:
+  - Captures audio from microphone and browser tab simultaneously
+  - Provides audio level feedback
+  - Supports pausing and resuming capture
+  - Allows selection of audio input devices
+
+### cacheService.js
+- Purpose: Provides a caching mechanism for translation results.
+- Key features:
+  - Uses IndexedDB for persistent storage
+  - Fallback to in-memory cache for testing environments
+  - Supports basic CRUD operations (set, get, clear)
+
+### speechToText.js
+- Purpose: Converts captured audio to text using speech recognition.
+- Key features:
+  - Utilizes browser's SpeechRecognition API
+  - Supports continuous recognition and interim results
+  - Handles language selection
+  - Provides error handling and state management
+
+###textToSpeech.js
+- Purpose: Converts translated text to speech.
+- Key features:
+  - Uses browser's built-in text-to-speech capabilities
+  - Falls back to Google TTS API for better quality
+  - Supports voice selection, rate, pitch, and volume adjustment
+  - Implements caching for efficient repeat speech synthesis
+
+### translation.js
+- Purpose: Translates text between languages using an external API.
+- Key features:
+  - Integrates with Google Cloud Translation API
+  - Implements caching for efficient repeat translations
+  - Supports batch translation and language detection
+  - Includes rate limiting and error handling
+  - Pre-processes and post-processes text to preserve formatting
+
+### translationPipeline.js
+- Purpose: Orchestrates the entire translation process.
+- Key features:
+  - Combines AudioCapture, SpeechToText, and Translation modules
+  - Manages the flow from audio capture to translated text output
+  - Provides start/stop functionality for the translation process
+
+## How They Work Together
+
+1. The `TranslationPipeline` class in `translationPipeline.js` acts as the main coordinator.
+2. When started, it initiates audio capture using `AudioCapture`.
+3. Captured audio is passed to `SpeechToText` for conversion to text.
+4. The resulting text is sent to the Translation module for translation.
+5. Translated text can be optionally passed to TextToSpeech for audio output.
+6. Throughout this process, CacheService is used to store and retrieve translations and synthesized speech, improving efficiency.
+7. The final translated text and/or audio is made available through callback functions.
+
+This pipeline allows for real-time audio capture, transcription, translation, and optional text-to-speech conversion, making it suitable for live translation applications in a browser environment.
