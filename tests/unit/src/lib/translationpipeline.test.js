@@ -1,5 +1,4 @@
-// tests/unit/src/lib/translationpipeline.test.js
-
+// tests/unit/src/lib/translationPipeline.test.js
 
 import { jest } from '@jest/globals';
 import TranslationPipeline from '../../../../src/lib/translationPipeline';
@@ -8,87 +7,110 @@ import SpeechToText from '../../../../src/lib/speechToText';
 import Translation from '../../../../src/lib/translation';
 import TextToSpeech from '../../../../src/lib/textToSpeech';
 
+// Mock dependencies
 jest.mock('../../../../src/lib/audioCapture');
-jest.mock('../../../../src/lib/translation', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    translate: jest.fn(),
-    setSourceLanguage: jest.fn(),
-    setTargetLanguage: jest.fn(),
-  }))
-}));
-jest.mock('../../../../src/lib/speechToText', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    start: jest.fn(),
-    stop: jest.fn(),
-  }))
-}));
-jest.mock('../../../../src/lib/textToSpeech', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    init: jest.fn().mockResolvedValue(undefined),
-    setVoice: jest.fn(),
-    speak: jest.fn().mockResolvedValue(undefined),
-  }))
-}));
+jest.mock('../../../../src/lib/speechToText');
+jest.mock('../../../../src/lib/translation');
+jest.mock('../../../../src/lib/textToSpeech');
 
 describe('TranslationPipeline', () => {
   let translationPipeline;
   let mockAudioCapture;
-  let mockSpeechToText;
-  let mockTranslation;
-  let mockTextToSpeech;
+  let mockLocalSpeechToText;
+  let mockRemoteSpeechToText;
+  let mockLocalToRemoteTranslation;
+  let mockRemoteToLocalTranslation;
+  let mockLocalTextToSpeech;
+  let mockRemoteTextToSpeech;
 
   beforeEach(() => {
+    // Reset mocks
+    jest.clearAllMocks();
+
+    // Create mock instances
     mockAudioCapture = {
       start: jest.fn(),
       stop: jest.fn(),
       setAudioLevelCallback: jest.fn(),
+      setAudioDataCallback: jest.fn(),
     };
 
-    mockSpeechToText = {
+    mockLocalSpeechToText = {
       start: jest.fn(),
       stop: jest.fn(),
-      setOnResultCallback: jest.fn(),
-      setLanguage: jest.fn(), 
+      processAudio: jest.fn(),
+      setLanguage: jest.fn(),
     };
 
-    mockTranslation = {
-      translate: jest.fn(),
+    mockRemoteSpeechToText = {
+      start: jest.fn(),
+      stop: jest.fn(),
+      processAudio: jest.fn(),
+      setLanguage: jest.fn(),
+    };
+
+    mockLocalToRemoteTranslation = {
       setSourceLanguage: jest.fn(),
       setTargetLanguage: jest.fn(),
       getTargetLanguage: jest.fn(),
     };
 
-    mockTextToSpeech = {
-      init: jest.fn().mockResolvedValue(undefined),
-      setVoice: jest.fn(),
-      speak: jest.fn().mockResolvedValue(undefined),
+    mockRemoteToLocalTranslation = {
+      setSourceLanguage: jest.fn(),
+      setTargetLanguage: jest.fn(),
+      getTargetLanguage: jest.fn(),
     };
 
-    AudioCapture.mockImplementation(() => mockAudioCapture);
-    SpeechToText.mockImplementation(() => mockSpeechToText);
-    Translation.mockImplementation(() => mockTranslation);
-    TextToSpeech.mockImplementation(() => mockTextToSpeech);
+    mockLocalTextToSpeech = {
+      init: jest.fn(),
+      speak: jest.fn(),
+      setVoice: jest.fn(),
+      setRate: jest.fn(),
+      setPitch: jest.fn(),
+      setVolume: jest.fn(),
+    };
 
+    mockRemoteTextToSpeech = {
+      init: jest.fn(),
+      speak: jest.fn(),
+      setVoice: jest.fn(),
+      setRate: jest.fn(),
+      setPitch: jest.fn(),
+      setVolume: jest.fn(),
+    };
+
+    // Set up mock implementations
+    AudioCapture.mockImplementation(() => mockAudioCapture);
+    SpeechToText.mockImplementationOnce(() => mockLocalSpeechToText)
+                 .mockImplementationOnce(() => mockRemoteSpeechToText);
+    Translation.mockImplementationOnce(() => mockLocalToRemoteTranslation)
+                .mockImplementationOnce(() => mockRemoteToLocalTranslation);
+    TextToSpeech.mockImplementationOnce(() => mockLocalTextToSpeech)
+                .mockImplementationOnce(() => mockRemoteTextToSpeech);
+
+    // Create TranslationPipeline instance
     translationPipeline = new TranslationPipeline();
   });
 
   test('constructor initializes with default options', () => {
     expect(translationPipeline.isRunning).toBe(false);
-    expect(translationPipeline.onTranslatedTextCallback).toBeNull();
+    expect(translationPipeline.onLocalTranslatedTextCallback).toBeNull();
+    expect(translationPipeline.onRemoteTranslatedTextCallback).toBeNull();
+    expect(translationPipeline.onLocalSpokenTranslationCallback).toBeNull();
+    expect(translationPipeline.onRemoteSpokenTranslationCallback).toBeNull();
   });
 
-  test('start method initializes components and sets callbacks', async () => {
+  test('start method initializes components and sets up callbacks', async () => {
     await translationPipeline.start();
-  
+
     expect(translationPipeline.isRunning).toBe(true);
-    expect(mockTextToSpeech.init).toHaveBeenCalled();
+    expect(mockLocalTextToSpeech.init).toHaveBeenCalled();
+    expect(mockRemoteTextToSpeech.init).toHaveBeenCalled();
     expect(mockAudioCapture.start).toHaveBeenCalled();
     expect(mockAudioCapture.setAudioLevelCallback).toHaveBeenCalled();
-    expect(mockSpeechToText.setOnResultCallback).toHaveBeenCalled();
-    expect(mockSpeechToText.start).toHaveBeenCalled();
+    expect(mockAudioCapture.setAudioDataCallback).toHaveBeenCalled();
+    expect(mockLocalSpeechToText.start).toHaveBeenCalled();
+    expect(mockRemoteSpeechToText.start).toHaveBeenCalled();
   });
 
   test('start method does not reinitialize if already running', async () => {
@@ -96,7 +118,15 @@ describe('TranslationPipeline', () => {
     await translationPipeline.start();
 
     expect(mockAudioCapture.start).not.toHaveBeenCalled();
-    expect(mockSpeechToText.start).not.toHaveBeenCalled();
+    expect(mockLocalSpeechToText.start).not.toHaveBeenCalled();
+    expect(mockRemoteSpeechToText.start).not.toHaveBeenCalled();
+  });
+
+  test('start method handles errors and sets isRunning to false', async () => {
+    mockAudioCapture.start.mockRejectedValue(new Error('Test error'));
+
+    await expect(translationPipeline.start()).rejects.toThrow('Failed to start translation pipeline: Test error');
+    expect(translationPipeline.isRunning).toBe(false);
   });
 
   test('stop method stops components and updates state', () => {
@@ -105,7 +135,8 @@ describe('TranslationPipeline', () => {
 
     expect(translationPipeline.isRunning).toBe(false);
     expect(mockAudioCapture.stop).toHaveBeenCalled();
-    expect(mockSpeechToText.stop).toHaveBeenCalled();
+    expect(mockLocalSpeechToText.stop).toHaveBeenCalled();
+    expect(mockRemoteSpeechToText.stop).toHaveBeenCalled();
   });
 
   test('stop method does nothing if not running', () => {
@@ -113,77 +144,99 @@ describe('TranslationPipeline', () => {
     translationPipeline.stop();
 
     expect(mockAudioCapture.stop).not.toHaveBeenCalled();
-    expect(mockSpeechToText.stop).not.toHaveBeenCalled();
+    expect(mockLocalSpeechToText.stop).not.toHaveBeenCalled();
+    expect(mockRemoteSpeechToText.stop).not.toHaveBeenCalled();
   });
 
-  test('setOnTranslatedTextCallback sets callback correctly', () => {
+  test('setOnLocalTranslatedTextCallback sets callback correctly', () => {
     const mockCallback = jest.fn();
-    translationPipeline.setOnTranslatedTextCallback(mockCallback);
-
-    expect(translationPipeline.onTranslatedTextCallback).toBe(mockCallback);
+    translationPipeline.setOnLocalTranslatedTextCallback(mockCallback);
+    expect(translationPipeline.onLocalTranslatedTextCallback).toBe(mockCallback);
   });
 
-  test('setSourceLanguage calls translation.setSourceLanguage', () => {
-    translationPipeline.setSourceLanguage('fr');
-
-    expect(mockTranslation.setSourceLanguage).toHaveBeenCalledWith('fr');
+  test('setOnRemoteTranslatedTextCallback sets callback correctly', () => {
+    const mockCallback = jest.fn();
+    translationPipeline.setOnRemoteTranslatedTextCallback(mockCallback);
+    expect(translationPipeline.onRemoteTranslatedTextCallback).toBe(mockCallback);
   });
 
-  test('setTargetLanguage calls translation.setTargetLanguage', () => {
-    translationPipeline.setTargetLanguage('es');
-
-    expect(mockTranslation.setTargetLanguage).toHaveBeenCalledWith('es');
+  test('setOnLocalSpokenTranslationCallback sets callback correctly', () => {
+    const mockCallback = jest.fn();
+    translationPipeline.setOnLocalSpokenTranslationCallback(mockCallback);
+    expect(translationPipeline.onLocalSpokenTranslationCallback).toBe(mockCallback);
   });
 
-  test('speech-to-text callback triggers translation and onTranslatedTextCallback', async () => {
-    const mockTranslatedText = 'Bonjour';
-    mockTranslation.translate.mockResolvedValue(mockTranslatedText);
-
-    const mockOnTranslatedTextCallback = jest.fn();
-    translationPipeline.setOnTranslatedTextCallback(mockOnTranslatedTextCallback);
-
-    await translationPipeline.start();
-
-    // Simulate speech-to-text result
-    const speechToTextCallback = mockSpeechToText.setOnResultCallback.mock.calls[0][0];
-    await speechToTextCallback('Hello', '123', true);
-
-    expect(mockTranslation.translate).toHaveBeenCalledWith('Hello');
-    expect(mockOnTranslatedTextCallback).toHaveBeenCalledWith(mockTranslatedText);
+  test('setOnRemoteSpokenTranslationCallback sets callback correctly', () => {
+    const mockCallback = jest.fn();
+    translationPipeline.setOnRemoteSpokenTranslationCallback(mockCallback);
+    expect(translationPipeline.onRemoteSpokenTranslationCallback).toBe(mockCallback);
   });
 
-  test('speech-to-text callback does not trigger translation for non-final results', async () => {
-    await translationPipeline.start();
-
-    // Simulate non-final speech-to-text result
-    const speechToTextCallback = mockSpeechToText.setOnResultCallback.mock.calls[0][0];
-    await speechToTextCallback('Hel', '123', false);
-
-    expect(mockTranslation.translate).not.toHaveBeenCalled();
+  test('setLocalLanguage updates language settings for local components', () => {
+    translationPipeline.setLocalLanguage('en');
+    expect(mockLocalToRemoteTranslation.setSourceLanguage).toHaveBeenCalledWith('en');
+    expect(mockRemoteToLocalTranslation.setTargetLanguage).toHaveBeenCalledWith('en');
+    expect(mockLocalSpeechToText.setLanguage).toHaveBeenCalledWith('en');
+    expect(mockLocalTextToSpeech.setVoice).toHaveBeenCalledWith('en');
   });
 
-  test('audio level callback is set correctly', async () => {
-    await translationPipeline.start();
-
-    const audioLevelCallback = mockAudioCapture.setAudioLevelCallback.mock.calls[0][0];
-    audioLevelCallback(0.5);
-
-    // Since we don't have a specific assertion for audio level handling,
-    // we're just ensuring the callback doesn't throw an error
-    expect(audioLevelCallback).not.toThrow();
+  test('setRemoteLanguage updates language settings for remote components', () => {
+    translationPipeline.setRemoteLanguage('fr');
+    expect(mockLocalToRemoteTranslation.setTargetLanguage).toHaveBeenCalledWith('fr');
+    expect(mockRemoteToLocalTranslation.setSourceLanguage).toHaveBeenCalledWith('fr');
+    expect(mockRemoteSpeechToText.setLanguage).toHaveBeenCalledWith('fr');
+    expect(mockRemoteTextToSpeech.setVoice).toHaveBeenCalledWith('fr');
   });
 
-  test('constructor with custom options', () => {
-    const customOptions = {
-      audioCapture: { sampleRate: 44100 },
-      speechToText: { language: 'en-US' },
-      translation: { apiKey: 'custom-api-key' }
-    };
+  test('speakTranslation calls local text-to-speech and callback for local target', async () => {
+    const mockCallback = jest.fn();
+    translationPipeline.setOnLocalSpokenTranslationCallback(mockCallback);
+    mockRemoteToLocalTranslation.getTargetLanguage.mockReturnValue('en');
 
-    const customPipeline = new TranslationPipeline(customOptions);
+    await translationPipeline.speakTranslation('Hello', 'local');
 
-    expect(AudioCapture).toHaveBeenCalledWith(customOptions.audioCapture);
-    expect(SpeechToText).toHaveBeenCalledWith(customOptions.speechToText);
-    expect(Translation).toHaveBeenCalledWith(customOptions.translation);
+    expect(mockLocalTextToSpeech.speak).toHaveBeenCalledWith('Hello', 'en');
+    expect(mockCallback).toHaveBeenCalledWith('Hello');
+  });
+
+  test('speakTranslation calls remote text-to-speech and callback for remote target', async () => {
+    const mockCallback = jest.fn();
+    translationPipeline.setOnRemoteSpokenTranslationCallback(mockCallback);
+    mockLocalToRemoteTranslation.getTargetLanguage.mockReturnValue('fr');
+
+    await translationPipeline.speakTranslation('Bonjour', 'remote');
+
+    expect(mockRemoteTextToSpeech.speak).toHaveBeenCalledWith('Bonjour', 'fr');
+    expect(mockCallback).toHaveBeenCalledWith('Bonjour');
+  });
+
+  test('setLocalTTSRate updates local text-to-speech rate', () => {
+    translationPipeline.setLocalTTSRate(1.5);
+    expect(mockLocalTextToSpeech.setRate).toHaveBeenCalledWith(1.5);
+  });
+
+  test('setRemoteTTSRate updates remote text-to-speech rate', () => {
+    translationPipeline.setRemoteTTSRate(0.8);
+    expect(mockRemoteTextToSpeech.setRate).toHaveBeenCalledWith(0.8);
+  });
+
+  test('setLocalTTSPitch updates local text-to-speech pitch', () => {
+    translationPipeline.setLocalTTSPitch(1.2);
+    expect(mockLocalTextToSpeech.setPitch).toHaveBeenCalledWith(1.2);
+  });
+
+  test('setRemoteTTSPitch updates remote text-to-speech pitch', () => {
+    translationPipeline.setRemoteTTSPitch(0.9);
+    expect(mockRemoteTextToSpeech.setPitch).toHaveBeenCalledWith(0.9);
+  });
+
+  test('setLocalTTSVolume updates local text-to-speech volume', () => {
+    translationPipeline.setLocalTTSVolume(0.7);
+    expect(mockLocalTextToSpeech.setVolume).toHaveBeenCalledWith(0.7);
+  });
+
+  test('setRemoteTTSVolume updates remote text-to-speech volume', () => {
+    translationPipeline.setRemoteTTSVolume(0.6);
+    expect(mockRemoteTextToSpeech.setVolume).toHaveBeenCalledWith(0.6);
   });
 });

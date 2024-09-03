@@ -8,37 +8,73 @@ import TextToSpeech from './textToSpeech';
 class TranslationPipeline {
   constructor(options = {}) {
     this.audioCapture = new AudioCapture(options.audioCapture);
-    this.speechToText = new SpeechToText(options.speechToText);
-    this.translation = new Translation(options.translation);
-    this.textToSpeech = new TextToSpeech(options.textToSpeech);
+    this.localSpeechToText = new SpeechToText(options.speechToText);
+    this.remoteSpeechToText = new SpeechToText(options.speechToText);
+    this.localToRemoteTranslation = new Translation(options.translation);
+    this.remoteToLocalTranslation = new Translation(options.translation);
+    this.localTextToSpeech = new TextToSpeech(options.textToSpeech);
+    this.remoteTextToSpeech = new TextToSpeech(options.textToSpeech);
 
     this.isRunning = false;
-    this.onTranslatedTextCallback = null;
-    this.onSpokenTranslationCallback = null;
+    this.onLocalTranslatedTextCallback = null;
+    this.onRemoteTranslatedTextCallback = null;
+    this.onLocalSpokenTranslationCallback = null;
+    this.onRemoteSpokenTranslationCallback = null;
   }
 
   async start() {
     if (this.isRunning) return;
 
-    this.isRunning = true;
-    await this.textToSpeech.init();
-    this.audioCapture.start();
+    try {
+      this.isRunning = true;
+      await Promise.all([
+        this.localTextToSpeech.init(),
+        this.remoteTextToSpeech.init()
+      ]);
+      
+      await this.audioCapture.start();
 
-    this.audioCapture.setAudioLevelCallback((level) => {
-      // Handle audio level updates if needed
-    });
+      this.setupAudioLevelCallback();
+      this.setupSpeechToTextProcessing();
 
-    this.speechToText.setOnResultCallback(async (transcript, sessionId, isFinal) => {
-      if (isFinal) {
-        const translatedText = await this.translation.translate(transcript);
-        if (this.onTranslatedTextCallback) {
-          this.onTranslatedTextCallback(translatedText);
+      await Promise.all([
+        this.localSpeechToText.start(),
+        this.remoteSpeechToText.start()
+      ]);
+    } catch (error) {
+      this.isRunning = false;
+      console.error('Failed to start translation pipeline:', error);
+      throw new Error('Failed to start translation pipeline: ' + error.message);
+    }
+  }
+
+  setupAudioLevelCallback() {
+    this.audioCapture.setAudioLevelCallback((level, source) => {
+      try {
+        if (source === 'tab') {
+          // Handle remote audio level
+          // Implement your logic here
+        } else if (source === 'mic') {
+          // Handle local audio level
+          // Implement your logic here
         }
-        await this.speakTranslation(translatedText);
+      } catch (error) {
+        console.error('Error in audio level callback:', error);
       }
     });
+  }
 
-    this.speechToText.start();
+  setupSpeechToTextProcessing() {
+    const processAudio = async (audioData, source) => {
+      try {
+        const sttInstance = source === 'tab' ? this.remoteSpeechToText : this.localSpeechToText;
+        await sttInstance.processAudio(audioData);
+      } catch (error) {
+        console.error(`Error processing ${source} audio:`, error);
+      }
+    };
+
+    this.audioCapture.setAudioDataCallback(processAudio);
   }
 
   stop() {
@@ -46,44 +82,76 @@ class TranslationPipeline {
 
     this.isRunning = false;
     this.audioCapture.stop();
-    this.speechToText.stop();
+    this.localSpeechToText.stop();
+    this.remoteSpeechToText.stop();
   }
 
-  setOnTranslatedTextCallback(callback) {
-    this.onTranslatedTextCallback = callback;
+  setOnLocalTranslatedTextCallback(callback) {
+    this.onLocalTranslatedTextCallback = callback;
   }
 
-  setOnSpokenTranslationCallback(callback) {
-    this.onSpokenTranslationCallback = callback;
+  setOnRemoteTranslatedTextCallback(callback) {
+    this.onRemoteTranslatedTextCallback = callback;
   }
 
-  setSourceLanguage(lang) {
-    this.translation.setSourceLanguage(lang);
-    this.speechToText.setLanguage(lang);
+  setOnLocalSpokenTranslationCallback(callback) {
+    this.onLocalSpokenTranslationCallback = callback;
   }
 
-  setTargetLanguage(lang) {
-    this.translation.setTargetLanguage(lang);
-    this.textToSpeech.setVoice(lang);
+  setOnRemoteSpokenTranslationCallback(callback) {
+    this.onRemoteSpokenTranslationCallback = callback;
   }
 
-  async speakTranslation(text) {
-    await this.textToSpeech.speak(text, this.translation.getTargetLanguage());
-    if (this.onSpokenTranslationCallback) {
-      this.onSpokenTranslationCallback(text);
+  setLocalLanguage(lang) {
+    this.localToRemoteTranslation.setSourceLanguage(lang);
+    this.remoteToLocalTranslation.setTargetLanguage(lang);
+    this.localSpeechToText.setLanguage(lang);
+    this.localTextToSpeech.setVoice(lang);
+  }
+
+  setRemoteLanguage(lang) {
+    this.localToRemoteTranslation.setTargetLanguage(lang);
+    this.remoteToLocalTranslation.setSourceLanguage(lang);
+    this.remoteSpeechToText.setLanguage(lang);
+    this.remoteTextToSpeech.setVoice(lang);
+  }
+
+  async speakTranslation(text, target) {
+    if (target === 'local') {
+      await this.localTextToSpeech.speak(text, this.remoteToLocalTranslation.getTargetLanguage());
+      if (this.onLocalSpokenTranslationCallback) {
+        this.onLocalSpokenTranslationCallback(text);
+      }
+    } else {
+      await this.remoteTextToSpeech.speak(text, this.localToRemoteTranslation.getTargetLanguage());
+      if (this.onRemoteSpokenTranslationCallback) {
+        this.onRemoteSpokenTranslationCallback(text);
+      }
     }
   }
 
-  setTTSRate(rate) {
-    this.textToSpeech.setRate(rate);
+  setLocalTTSRate(rate) {
+    this.localTextToSpeech.setRate(rate);
   }
 
-  setTTSPitch(pitch) {
-    this.textToSpeech.setPitch(pitch);
+  setRemoteTTSRate(rate) {
+    this.remoteTextToSpeech.setRate(rate);
   }
 
-  setTTSVolume(volume) {
-    this.textToSpeech.setVolume(volume);
+  setLocalTTSPitch(pitch) {
+    this.localTextToSpeech.setPitch(pitch);
+  }
+
+  setRemoteTTSPitch(pitch) {
+    this.remoteTextToSpeech.setPitch(pitch);
+  }
+
+  setLocalTTSVolume(volume) {
+    this.localTextToSpeech.setVolume(volume);
+  }
+
+  setRemoteTTSVolume(volume) {
+    this.remoteTextToSpeech.setVolume(volume);
   }
 }
 

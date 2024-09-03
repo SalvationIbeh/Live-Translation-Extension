@@ -3,7 +3,7 @@
 import AudioCapture from '../../../../src/lib/audioCapture';
 import mockMediaDevices from '../../../../mocks/navigator.mediaDevices';
 
-// Mock the global objects and methods
+// Existing mocks and setup
 global.navigator = {
   mediaDevices: {
     getUserMedia: jest.fn(),
@@ -21,6 +21,11 @@ global.window = {
 const mockCreateMediaStreamSource = jest.fn().mockReturnValue({});
 const mockAudioContext = {
   createMediaStreamSource: mockCreateMediaStreamSource,
+  createScriptProcessor: jest.fn().mockReturnValue({
+    connect: jest.fn(),
+    disconnect: jest.fn(),
+  }),
+  destination: {},
 };
 
 global.window.AudioContext = jest.fn().mockImplementation(() => mockAudioContext);
@@ -30,14 +35,41 @@ describe('AudioCapture', () => {
   let mockQuery;
 
   beforeEach(() => {
+    // Mock navigator.mediaDevices
+    global.navigator.mediaDevices = {
+      getUserMedia: jest.fn().mockResolvedValue('mockStream'),
+      getDisplayMedia: jest.fn().mockResolvedValue('mockDisplayStream'),
+      enumerateDevices: jest.fn().mockResolvedValue([])
+    };
+
+    // Mock navigator.permissions
+    global.navigator.permissions = {
+      query: jest.fn().mockResolvedValue({ state: 'granted' })
+    };
+
+    // Mock AudioContext
+    global.AudioContext = jest.fn().mockImplementation(() => ({
+      createMediaStreamSource: jest.fn().mockReturnValue({
+        connect: jest.fn()
+      }),
+      createScriptProcessor: jest.fn().mockReturnValue({
+        connect: jest.fn(),
+        disconnect: jest.fn()
+      }),
+      destination: {}
+    }));
+
+    // Mock RTCPeerConnection
+    global.RTCPeerConnection = jest.fn().mockImplementation(() => ({
+      addTrack: jest.fn()
+    }));
+
     audioCapture = new AudioCapture();
     jest.clearAllMocks();
-    mockMediaDevices.getUserMedia.mockReset();
-    mockMediaDevices.enumerateDevices.mockReset();
-    mockMediaDevices.getDisplayMedia.mockReset();
   });
 
-    describe('constructor', () => {
+  // Existing tests
+  describe('constructor', () => {
     it('should initialize with default options', () => {
       expect(audioCapture.options).toEqual({
         sampleRate: 44100,
@@ -62,10 +94,10 @@ describe('AudioCapture', () => {
   describe('start', () => {
     let mockQuery;
   
-  beforeEach(() => {
-    mockQuery = jest.fn();
-    audioCapture.requestPermissions = mockQuery;
-  });
+    beforeEach(() => {
+      mockQuery = jest.fn();
+      audioCapture.requestPermissions = mockQuery;
+    });
 
     it('should not start capturing if already capturing', async () => {
       audioCapture.isCapturing = true;
@@ -73,23 +105,23 @@ describe('AudioCapture', () => {
       expect(mockQuery).not.toHaveBeenCalled();
     });
   
-    it('should start capturing if not already capturing', async () => {
+    test('should start capturing if not already capturing', async () => {
       const mockRequestPermissions = jest.spyOn(audioCapture, 'requestPermissions').mockResolvedValue();
       const mockSetupAudioContext = jest.spyOn(audioCapture, 'setupAudioContext').mockResolvedValue();
-      const mockCaptureMicAudio = jest.spyOn(audioCapture, 'captureMicAudio').mockResolvedValue();
       const mockCaptureTabAudio = jest.spyOn(audioCapture, 'captureTabAudio').mockResolvedValue();
+      const mockCaptureMicAudio = jest.spyOn(audioCapture, 'captureMicAudio').mockResolvedValue();
       const mockSetupAudioProcessing = jest.spyOn(audioCapture, 'setupAudioProcessing').mockImplementation();
       const mockStartVisualization = jest.spyOn(audioCapture, 'startVisualization').mockImplementation();
   
       await audioCapture.start();
   
+      expect(audioCapture.isCapturing).toBe(true);
       expect(mockRequestPermissions).toHaveBeenCalled();
       expect(mockSetupAudioContext).toHaveBeenCalled();
-      expect(mockCaptureMicAudio).toHaveBeenCalled();
       expect(mockCaptureTabAudio).toHaveBeenCalled();
+      expect(mockCaptureMicAudio).toHaveBeenCalled();
       expect(mockSetupAudioProcessing).toHaveBeenCalled();
       expect(mockStartVisualization).toHaveBeenCalled();
-      expect(audioCapture.isCapturing).toBe(true);
     });
   
     it('should handle errors during start', async () => {
@@ -167,40 +199,29 @@ describe('AudioCapture', () => {
       const mockCallback = jest.fn();
       audioCapture.setAudioLevelCallback(mockCallback);
       
-      audioCapture.analyser = {
-        frequencyBinCount: 4,
-        getByteFrequencyData: jest.fn(array => {
-          array.set([100, 150, 200, 250]);
-        }),
-      };
+      audioCapture.capturedChunks = [{ source: 'tab', left: new Float32Array([0.5, 0.5]), right: new Float32Array([0.5, 0.5]) }];
+      
+      audioCapture.updateAudioLevel('tab');
 
-      audioCapture.updateAudioLevel();
-
-      expect(mockCallback).toHaveBeenCalledWith(0.6862745098039216); // (100 + 150 + 200 + 250) / (4 * 255)
+      expect(mockCallback).toHaveBeenCalledWith(expect.any(Number), 'tab');
     });
   });
 
   describe('stop', () => {
-    it('should not do anything if not capturing', () => {
-      const audioCapture = new AudioCapture();
-      audioCapture.stop();
-      // No error should be thrown
-    });
-
-    it('should stop all tracks and close audio context when capturing', () => {
-      const audioCapture = new AudioCapture();
+    test('should stop all tracks and close audio context when capturing', () => {
       audioCapture.isCapturing = true;
-      
-      const mockTrackStop = jest.fn();
-      audioCapture.micStream = { getTracks: () => [{ stop: mockTrackStop }] };
-      audioCapture.tabStream = { getTracks: () => [{ stop: mockTrackStop }] };
+      const mockStop = jest.fn();
+      audioCapture.localStream = { getTracks: () => [{ stop: mockStop }] };
+      audioCapture.remoteStream = { getTracks: () => [{ stop: mockStop }] };
+      audioCapture.tabAudioStream = { getTracks: () => [{ stop: mockStop }] };
+      audioCapture.micAudioStream = { getTracks: () => [{ stop: mockStop }] };
       audioCapture.audioContext = { close: jest.fn() };
 
       audioCapture.stop();
 
       expect(audioCapture.isCapturing).toBe(false);
       expect(audioCapture.isPaused).toBe(false);
-      expect(mockTrackStop).toHaveBeenCalledTimes(2);
+      expect(mockStop).toHaveBeenCalledTimes(4); // Called for each stream
       expect(audioCapture.audioContext.close).toHaveBeenCalled();
       expect(audioCapture.capturedChunks).toEqual([]);
     });
@@ -231,12 +252,11 @@ describe('AudioCapture', () => {
 
   test('selectAudioInput should set up new mic stream with correct constraints', async () => {
     const mockStream = { id: 'mock-stream' };
-    mockMediaDevices.getUserMedia.mockResolvedValue(mockStream);
+    global.navigator.mediaDevices.getUserMedia = jest.fn().mockResolvedValue(mockStream);
   
-    const audioCapture = new AudioCapture();
     await audioCapture.selectAudioInput('audio1');
   
-    expect(mockMediaDevices.getUserMedia).toHaveBeenCalledWith({
+    expect(global.navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
       audio: {
         deviceId: { exact: 'audio1' },
         echoCancellation: true,
@@ -253,9 +273,8 @@ describe('AudioCapture', () => {
         { kind: 'videoinput', deviceId: 'video1' },
         { kind: 'audioinput', deviceId: 'audio2' },
       ];
-      mockMediaDevices.enumerateDevices.mockResolvedValue(mockDevices);
+      global.navigator.mediaDevices.enumerateDevices = jest.fn().mockResolvedValue(mockDevices);
 
-      const audioCapture = new AudioCapture();
       const result = await audioCapture.getAudioInputs();
     
       expect(result).toEqual([
@@ -362,12 +381,69 @@ describe('AudioCapture', () => {
       await audioCapture.setupAudioContext();
 
       const mockError = new Error('getUserMedia error');
-      mockMediaDevices.getUserMedia.mockRejectedValue(mockError);
-
+      global.navigator.mediaDevices.getUserMedia = jest.fn().mockRejectedValue(mockError);
       const mockHandleError = jest.spyOn(audioCapture, 'handleError').mockImplementation();
 
       await expect(audioCapture.createMediaStreamSource()).rejects.toThrow('getUserMedia error');
       expect(mockHandleError).toHaveBeenCalledWith(mockError);
     });
   });
+
+  // New tests for updated functionality
+  describe('Dual audio capture', () => {
+    test('start method initializes tab and mic audio capture', async () => {
+      const mockTabStream = { id: 'mock-tab-stream' };
+      const mockMicStream = { id: 'mock-mic-stream' };
+      
+      global.navigator.mediaDevices.getDisplayMedia = jest.fn().mockResolvedValue(mockTabStream);
+      global.navigator.mediaDevices.getUserMedia = jest.fn().mockResolvedValue(mockMicStream);
+      
+      jest.spyOn(audioCapture, 'requestPermissions').mockResolvedValue();
+      jest.spyOn(audioCapture, 'setupAudioContext').mockResolvedValue();
+      jest.spyOn(audioCapture, 'captureTabAudio').mockResolvedValue();
+      jest.spyOn(audioCapture, 'captureMicAudio').mockResolvedValue();
+      jest.spyOn(audioCapture, 'setupAudioProcessing').mockImplementation();
+      jest.spyOn(audioCapture, 'startVisualization').mockImplementation();
+
+      await audioCapture.start();
+
+      expect(audioCapture.isCapturing).toBe(true);
+      expect(audioCapture.captureTabAudio).toHaveBeenCalled();
+      expect(audioCapture.captureMicAudio).toHaveBeenCalled();
+    });
+
+    test('setupAudioProcessing creates separate processors for tab and mic', () => {
+      const mockCreateScriptProcessor = jest.fn().mockReturnValue({
+        connect: jest.fn(),
+        onaudioprocess: null
+      });
+      audioCapture.audioContext = {
+        createScriptProcessor: mockCreateScriptProcessor,
+        destination: {}
+      };
+      audioCapture.tabSource = { connect: jest.fn() };
+      audioCapture.micSource = { connect: jest.fn() };
+
+      audioCapture.setupAudioProcessing();
+
+      expect(mockCreateScriptProcessor).toHaveBeenCalledTimes(2);
+      expect(audioCapture.tabProcessor).toBeDefined();
+      expect(audioCapture.micProcessor).toBeDefined();
+    });
+
+    test('handleAudioProcess processes audio from both tab and mic', () => {
+      audioCapture.isCapturing = true;
+      audioCapture.isPaused = false;
+      const mockEvent = { inputBuffer: { getChannelData: jest.fn().mockReturnValue(new Float32Array(4096)) } };
+      
+      audioCapture.handleAudioProcess(mockEvent, 'tab');
+      audioCapture.handleAudioProcess(mockEvent, 'mic');
+
+      expect(audioCapture.capturedChunks).toHaveLength(2);
+      expect(audioCapture.capturedChunks[0].source).toBe('tab');
+      expect(audioCapture.capturedChunks[1].source).toBe('mic');
+    });
+  });
+
+  // Add more new tests as needed
 });

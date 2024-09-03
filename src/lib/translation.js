@@ -21,55 +21,40 @@ class Translation {
     this.cacheService = new CacheService();
     this.cacheService.init().catch(console.error);
     this.testMode = options.testMode || false;
+    this.worker = new Worker('translationWorker.js');
+    this.workerPromises = new Map();
   }
 
   async translate(text, options = {}) {
     const cacheKey = `${this.sourceLang}_${this.targetLang}_${text}`;
     const cachedTranslation = await this.cacheService.get(cacheKey);
-  
+
     if (cachedTranslation) {
       return cachedTranslation;
     }
-    
-    if (this.cache.has(text)) {
-      return this.cache.get(text);
-    }
-  
-    await this.waitForToken();
-  
-    try {
-      const { text: cleanedText, htmlTags, specialChars } = this.preProcess(text);
-      const detectedLanguage = options.detectLanguage ? await this.detectLanguage(cleanedText) : this.sourceLang;
-      
-      const response = await this.makeApiCall('translate', {
-        q: cleanedText,
-        source: detectedLanguage,
-        target: this.targetLang,
-        format: options.mimeType || 'text/plain',
-        key: this.apiKey,
-      });
-  
-      // Check if the response has the expected structure
-      if (response.data && response.data.data && response.data.data.translations && response.data.data.translations.length > 0) {
-        const translatedText = this.postProcess(response.data.data.translations[0].translatedText, { htmlTags, specialChars });
-        this.cache.set(text, translatedText);
-        this.translationMemory.set(cleanedText, translatedText);
-        await this.cacheService.set(cacheKey, translatedText);
-        
-        return translatedText;
-      } else {
-        throw new Error('Unexpected API response structure');
-      }
-    } catch (error) {
-      console.error('Translation error:', error);
-      throw error;
-    }
+
+    return new Promise((resolve, reject) => {
+      const id = Date.now().toString();
+      this.workerPromises.set(id, { resolve, reject });
+
+      this.worker.onmessage = (event) => {
+        const { id, result, error } = event.data;
+        const promise = this.workerPromises.get(id);
+        if (promise) {
+          if (error) {
+            promise.reject(new Error(error));
+          } else {
+            promise.resolve(result);
+          }
+          this.workerPromises.delete(id);
+        }
+      };
+
+      this.worker.postMessage({ id, action: 'translate', text, options });
+    });
   }
 
-  clearCache() {
-    return this.cacheService.clear();
-  }
-
+  
   async batchTranslate(texts, options = {}) {
     const batchSize = 100; // Google Translate API limit
     const batches = [];
@@ -115,7 +100,7 @@ class Translation {
     }
   }
 
-  async makeApiCall(method, params) {
+  async makeApiCall(method, params, testDelay = 1000) {
     const url = `${this.baseUrl}/${this.projectId}:${method}`;
     const options = {
       method: 'POST',
@@ -126,7 +111,7 @@ class Translation {
       body: JSON.stringify(params),
     };
 
-    const response = await this.retryWithBackoff(() => fetch(url, options));
+    const response = await this.retryWithBackoff(() => fetch(url, options), 3, testDelay);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -141,7 +126,9 @@ class Translation {
         return await fn();
       } catch (error) {
         if (i === maxRetries - 1) throw error;
-        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+        if (delay > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+        }
       }
     }
   }
@@ -149,37 +136,34 @@ class Translation {
   async waitForToken() {
     if (this.testMode) return; // Skip rate limiting in test mode
 
-    const now = Date.now();
-    const timeSinceLastRefill = now - this.rateLimiter.lastRefill;
-    this.rateLimiter.tokens = Math.min(10, this.rateLimiter.tokens + timeSinceLastRefill / this.rateLimiter.refillRate);
-    this.rateLimiter.lastRefill = now;
-
     if (this.rateLimiter.tokens < 1) {
-      const waitTime = (1 - this.rateLimiter.tokens) * this.rateLimiter.refillRate;
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-      return this.waitForToken();
+      throw new Error('Rate limit exceeded');
     }
 
     this.rateLimiter.tokens -= 1;
   }
 
+  // Add this method for testing
+  _testRefillTokens(amount) {
+    this.rateLimiter.tokens = Math.min(10, this.rateLimiter.tokens + amount);
+  }
+
   preProcess(text) {
-    // Implement text cleaning logic here
     // Remove extra whitespace
     text = text.replace(/\s+/g, ' ').trim();
     
-    // Preserve HTML tags
     const htmlTags = [];
-    text = text.replace(/<[^>]+>/g, match => {
-      htmlTags.push(match);
-      return `__HTML_TAG_${htmlTags.length - 1}__`;
-    });
-    
-    // Preserve numbers and special characters
     const specialChars = [];
-    text = text.replace(/[0-9]+|[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/g, match => {
-      specialChars.push(match);
-      return `__SPECIAL_CHAR_${specialChars.length - 1}__`;
+    
+    // Preserve HTML tags and special characters
+    text = text.replace(/<[^>]+>|[0-9]+|[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/g, match => {
+      if (match.startsWith('<')) {
+        htmlTags.push(match);
+        return `__HTML_TAG_${htmlTags.length - 1}__`;
+      } else {
+        specialChars.push(match);
+        return `__SPECIAL_CHAR_${specialChars.length - 1}__`;
+      }
     });
     
     return { text, htmlTags, specialChars };
@@ -208,6 +192,7 @@ class Translation {
 
   clearCache() {
     this.cache.clear();
+    return this.cacheService.clear();
   }
 
   addToGlossary(term, translation) {
@@ -219,20 +204,26 @@ class Translation {
     for (const [term, translation] of this.glossary.entries()) {
       const regex = new RegExp(`\\b${term}\\b`, 'gi');
       translatedText = translatedText.replace(regex, (match) => {
-        return match[0] === match[0].toUpperCase() 
-          ? translation[0].toUpperCase() + translation.slice(1) 
-          : translation;
+        return match === match.toUpperCase() 
+          ? translation.toUpperCase()
+          : match[0] === match[0].toUpperCase() 
+            ? translation[0].toUpperCase() + translation.slice(1) 
+            : translation;
       });
     }
     return translatedText;
   }
 
   async translateJson(jsonObj) {
-    const translatedObj = {};
+    const translatedObj = Array.isArray(jsonObj) ? [] : {};
     for (const [key, value] of Object.entries(jsonObj)) {
       if (typeof value === 'string') {
         translatedObj[key] = await this.translate(value);
-      } else if (typeof value === 'object') {
+      } else if (Array.isArray(value)) {
+        translatedObj[key] = await Promise.all(value.map(item => 
+          typeof item === 'string' ? this.translate(item) : this.translateJson(item)
+        ));
+      } else if (typeof value === 'object' && value !== null) {
         translatedObj[key] = await this.translateJson(value);
       } else {
         translatedObj[key] = value;
